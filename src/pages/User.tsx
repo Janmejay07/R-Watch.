@@ -46,8 +46,16 @@ interface Activity {
 }
 
 interface UserData {
+  _id: string;
+  name: string;
   username: string;
-  // Add other user fields as needed
+  email: string;
+  createdAt: string;
+}
+
+interface AuthResponse {
+  success: boolean;
+  user: UserData;
 }
 
 function User(): JSX.Element {
@@ -62,74 +70,62 @@ function User(): JSX.Element {
   const navigate = useNavigate();
 
   const menuItems = [
-    {
-      icon: <LayoutDashboard size={20} />,
-      label: "Dashboard",
-      id: "dashboard",
-      to: "/dashboard",
-    },
-    {
-      icon: <Goal size={20} />,
-      label: "Set Your Goals",
-      id: "goals",
-      to: "/goalform",
-    },
-    {
-      icon: <Users size={20} />,
-      label: "Users",
-      id: "users",
-      to: "/User",
-    },
-    {
-      icon: <Settings size={20} />,
-      label: "Settings",
-      id: "settings",
-    },
+    { icon: <LayoutDashboard size={20} />, label: "Dashboard", id: "dashboard", to: "/dashboard" },
+    { icon: <Goal size={20} />, label: "Set Your Goals", id: "goals", to: "/goalform" },
+    { icon: <Users size={20} />, label: "Users", id: "users", to: "/User" },
+    { icon: <Settings size={20} />, label: "Settings", id: "settings" },
   ];
 
-  // Verify JWT token and get user data
   useEffect(() => {
     const verifyAuth = async () => {
+      console.log("Starting auth verification...");
       setIsLoading(true);
       try {
-        // Get token from localStorage
         const token = localStorage.getItem('token');
+        console.log("Token found:", !!token); // Log if token exists
         
         if (!token) {
+          console.log("No token found in localStorage");
           setError("Authentication required");
           setIsLoading(false);
           return;
         }
-        
-        // Verify token with backend
+
+        console.log("Sending verification request to server...");
         const response = await fetch('http://localhost:5000/api/auth/verify', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Authorization': Bearer ${token}
           }
         });
+
+        console.log("Auth verification status:", response.status);
         
         if (!response.ok) {
-          // Token invalid or expired
+          console.log("Auth verification failed with status:", response.status);
           localStorage.removeItem('token');
           setError("Session expired. Please login again.");
           setIsLoading(false);
           return;
         }
+
+        const authResponse = await response.json() as AuthResponse;
+        console.log("User data received:", authResponse);
         
-        // Token is valid, get user data
-        const user = await response.json();
-        setUserData(user);
-        
-        // Fetch user activity data
-        if (user.username) {
-          await fetchUserData(user.username);
+        if (authResponse && authResponse.user && authResponse.user.username) {
+          console.log("Username found:", authResponse.user.username);
+          setUserData(authResponse.user);
+          const success = await fetchUserData(authResponse.user.username);
+          console.log("Data fetch success:", success);
+        } else {
+          console.log("No username in user data");
+          setError("User data missing username");
         }
-        
+
       } catch (err) {
         console.error("Auth verification error:", err);
-        setError(`Authentication error: ${err instanceof Error ? err.message : String(err)}`);
+        setError(Authentication error: ${err instanceof Error ? err.message : String(err)});
       }
       setIsLoading(false);
     };
@@ -138,28 +134,45 @@ function User(): JSX.Element {
   }, []);
 
   const fetchUserData = async (username: string) => {
-    if (!username) return;
+    if (!username) {
+      console.log("No username provided to fetchUserData");
+      return false;
+    }
     
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(
-        `http://localhost:5000/api/activities/${username}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
+      console.log(Fetching data for user: ${username});
+      
+      const res = await fetch(http://localhost:5000/api/activities/${username}, {
+        headers: {
+          'Authorization': Bearer ${token}
         }
-      );
+      });
+
+      console.log("Activities API response status:", res.status);
       
-      if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
-      
+      if (!res.ok) {
+        console.log("API error response:", res.statusText);
+        throw new Error(HTTP error: ${res.status});
+      }
+
       const json = await res.json();
-      setData(json);
-      processDataForGraph(json);
-      setError(null);
-      return true;
+      console.log("Activities data received:", json);
+      console.log("Data length:", json.length);
+      
+      if (json && Array.isArray(json) && json.length > 0) {
+        setData(json);
+        processDataForGraph(json);
+        setError(null);
+        return true;
+      } else {
+        console.log("Empty or invalid data received");
+        setError("No activity data found for this user");
+        return false;
+      }
     } catch (err) {
-      setError(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      console.error("Data fetch error:", err);
+      setError(Error: ${err instanceof Error ? err.message : String(err)});
       return false;
     }
   };
@@ -171,12 +184,18 @@ function User(): JSX.Element {
   };
 
   const processDataForGraph = (activities: Activity[]) => {
+    console.log("Processing data for graphs, activities count:", activities.length);
     const grouped: Record<string, { date: string; timeSpent: number }[]> = {};
     activities.forEach(({ site, date, total_time_spent }) => {
+      if (!site || !date) {
+        console.log("Found activity with missing site or date:", { site, date });
+        return;
+      }
       const d = new Date(date).toISOString().split("T")[0];
       if (!grouped[site]) grouped[site] = [];
       grouped[site].push({ date: d, timeSpent: total_time_spent });
     });
+    console.log("Processed graph data:", grouped);
     setGraphData(grouped);
   };
 
@@ -197,15 +216,7 @@ function User(): JSX.Element {
         label: "Time Spent (mins)",
         data: data.map((d) => d.total_time_spent),
         backgroundColor: [
-          "#3b82f6",
-          "#10b981",
-          "#f59e0b",
-          "#ef4444",
-          "#8b5cf6",
-          "#f43f5e",
-          "#22d3ee",
-          "#ec4899",
-          "#14b8a6",
+          "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#f43f5e", "#22d3ee", "#ec4899", "#14b8a6",
         ],
         borderWidth: 1,
       },
@@ -213,6 +224,7 @@ function User(): JSX.Element {
   };
 
   const getBarChartData = () => {
+    console.log("Generating bar chart data...");
     const grouped: Record<string, Record<string, number>> = {};
     const datesSet = new Set<string>();
     data.forEach(({ site, date, total_time_spent }) => {
@@ -223,18 +235,22 @@ function User(): JSX.Element {
     });
 
     const sortedDates = Array.from(datesSet).sort();
+    console.log("Bar chart dates:", sortedDates);
+    console.log("Bar chart sites:", Object.keys(grouped));
+    
     return {
       labels: sortedDates,
       datasets: Object.entries(grouped).map(([site, values], i) => ({
         label: site,
         data: sortedDates.map((d) => values[d] || 0),
-        backgroundColor: `hsl(${(i * 50) % 360}, 70%, 60%)`,
+        backgroundColor: hsl(${(i * 50) % 360}, 70%, 60%),
         borderRadius: 6,
       })),
     };
   };
 
   const getLineChartData = () => {
+    console.log("Generating line chart data...");
     const allDates = new Set<string>();
     let latestDate = new Date();
 
@@ -251,6 +267,7 @@ function User(): JSX.Element {
     const minDays = 4;
     generateDateRange(latestDate, minDays).forEach((d) => allDates.add(d));
     const sortedDates = Array.from(allDates).sort();
+    console.log("Line chart dates:", sortedDates);
 
     const datasets = Object.entries(graphData).map(([site, entries], i) => {
       const map: Record<string, number> = {};
@@ -261,7 +278,7 @@ function User(): JSX.Element {
       return {
         label: site,
         data: sortedDates.map((d) => map[d] || 0),
-        borderColor: `hsl(${(i * 60) % 360}, 70%, 60%)`,
+        borderColor: hsl(${(i * 60) % 360}, 70%, 60%),
         backgroundColor: "transparent",
         tension: 0.3,
         fill: false,
@@ -279,13 +296,15 @@ function User(): JSX.Element {
     );
   }
 
+  console.log("Render state - userData:", userData);
+  console.log("Render state - data length:", data.length);
+  console.log("Render state - error:", error);
+
   return (
     <div className="flex h-screen bg-[#0f172a] text-white">
       {/* Sidebar */}
       <aside className="w-64 bg-[#1e293b] border-r border-gray-700">
-        <div className="p-4 text-xl font-bold border-b border-gray-700">
-          R-Watch
-        </div>
+        <div className="p-4 text-xl font-bold border-b border-gray-700">R-Watch</div>
         <nav className="mt-4 space-y-1">
           {menuItems.map((item) =>
             item.to ? (
@@ -294,9 +313,7 @@ function User(): JSX.Element {
                 to={item.to}
                 onClick={() => setActiveTab(item.id)}
                 className={`w-full flex items-center px-4 py-3 space-x-3 rounded-lg transition-colors ${
-                  activeTab === item.id
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-400 hover:bg-gray-700"
+                  activeTab === item.id ? "bg-blue-600 text-white" : "text-gray-400 hover:bg-gray-700"
                 }`}
               >
                 {item.icon}
@@ -307,9 +324,7 @@ function User(): JSX.Element {
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
                 className={`w-full flex items-center px-4 py-3 space-x-3 rounded-lg transition-colors ${
-                  activeTab === item.id
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-400 hover:bg-gray-700"
+                  activeTab === item.id ? "bg-blue-600 text-white" : "text-gray-400 hover:bg-gray-700"
                 }`}
               >
                 {item.icon}
@@ -343,7 +358,7 @@ function User(): JSX.Element {
                 <span className="text-sm text-gray-300">
                   Welcome, {userData.username}
                 </span>
-                <button 
+                <button
                   onClick={handleLogout}
                   className="px-4 py-1 border border-white/20 rounded-full hover:bg-white/10"
                 >
@@ -363,38 +378,21 @@ function User(): JSX.Element {
           </div>
         </nav>
 
-        {/* User Info Banner */}
-        <div className="px-8 py-6 border-b border-gray-700 flex justify-between items-center bg-[#0f172a]">
-          <div className="flex items-center space-x-4">
-            {userData ? (
-              <div className="text-lg">
-                Viewing data for: <span className="font-semibold text-blue-400">{userData.username}</span>
-              </div>
-            ) : (
-              <div className="flex gap-4">
-                <div className="text-yellow-500">
-                  Please log in to view your data
-                </div>
-                <Link to="/login">
-                  <button className="px-4 py-1 bg-blue-600 rounded-md hover:bg-blue-700 transition">
-                    Go to Login
-                  </button>
-                </Link>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center space-x-4">
-            <Bell className="text-gray-400 hover:text-white cursor-pointer" />
-            <div className="w-8 h-8 rounded-full bg-gray-700"></div>
-          </div>
-        </div>
-
         {/* Main Dashboard */}
         <main className="p-8 space-y-12">
           {error && (
             <div className="bg-red-800/30 text-red-200 border border-red-700 p-4 rounded-lg">
               {error}
+              <div className="mt-2 text-sm">
+                If you're seeing authentication errors, try logging out and back in.
+              </div>
             </div>
+          )}
+
+          {userData && (
+            <h2 className="text-xl text-center font-bold text-blue-400">
+              Analytics for {userData.username}
+            </h2>
           )}
 
           {!userData ? (
@@ -404,6 +402,14 @@ function User(): JSX.Element {
           ) : data.length === 0 ? (
             <div className="text-center text-gray-400 pt-20">
               No data available for {userData.username}.
+              <div className="mt-4 text-sm">
+                This could be because:
+                <ul className="list-disc list-inside mt-2">
+                  <li>You haven't generated any activity data yet</li>
+                  <li>There might be an issue connecting to the server</li>
+                  <li>Your session might need to be refreshed</li>
+                </ul>
+              </div>
             </div>
           ) : (
             <>
@@ -414,10 +420,7 @@ function User(): JSX.Element {
                   </h2>
                   <div className="flex-1 flex items-center justify-center">
                     <div className="w-full max-w-[350px] h-[300px]">
-                      <Pie
-                        data={pieChartData}
-                        options={{ maintainAspectRatio: false }}
-                      />
+                      <Pie data={pieChartData} options={{ maintainAspectRatio: false }} />
                     </div>
                   </div>
                 </div>
@@ -427,10 +430,7 @@ function User(): JSX.Element {
                     Daily Time per Site (Bar)
                   </h2>
                   <div className="flex-1">
-                    <Bar
-                      data={getBarChartData()}
-                      options={{ maintainAspectRatio: false }}
-                    />
+                    <Bar data={getBarChartData()} options={{ maintainAspectRatio: false }} />
                   </div>
                 </div>
               </div>
